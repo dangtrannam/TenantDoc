@@ -1,18 +1,14 @@
+using Hangfire;
 using TenantDoc.Core.Interfaces;
 using TenantDoc.Core.Models;
 
 namespace TenantDoc.Api.Jobs;
 
-public class ValidationJob
+public class ValidationJob(IDocumentStore store, IFileStorageService storage, IBackgroundJobClient jobClient)
 {
-    private readonly IDocumentStore _store;
-    private readonly IFileStorageService _storage;
-
-    public ValidationJob(IDocumentStore store, IFileStorageService storage)
-    {
-        _store = store;
-        _storage = storage;
-    }
+    private readonly IDocumentStore _store = store;
+    private readonly IFileStorageService _storage = storage;
+    private readonly IBackgroundJobClient _jobClient = jobClient;
 
     public async Task ValidateDocument(Guid documentId)
     {
@@ -61,6 +57,18 @@ public class ValidationJob
                 document.Status = DocumentStatus.OcrPending;
                 var duration = (DateTime.UtcNow - startTime).TotalSeconds;
                 Console.WriteLine($"[ValidationJob] Document {documentId} validated successfully in {duration:F2}s");
+
+                // Schedule OCR job with 30-second delay and get job ID
+                var ocrJobId = _jobClient.Schedule<OcrJob>(
+                    x => x.ProcessOcr(documentId),
+                    TimeSpan.FromSeconds(30));
+                Console.WriteLine($"[ValidationJob] Scheduled OcrJob for {documentId} with 30s delay (JobId: {ocrJobId})");
+
+                // Schedule ThumbnailJob as continuation (runs only if OcrJob succeeds)
+                _jobClient.ContinueJobWith<ThumbnailJob>(
+                    ocrJobId,
+                    x => x.GenerateThumbnail(documentId));
+                Console.WriteLine($"[ValidationJob] Scheduled ThumbnailJob continuation for {documentId}");
             }
             else
             {
