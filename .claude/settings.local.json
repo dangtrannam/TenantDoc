@@ -85,7 +85,8 @@
       "Bash(npx eslint:*)",
       "Bash(Get-Date:*)",
       "Bash(for f in *-hero.jpg)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(dotnet build:*)"
     ],
     "deny": [],
     "ask": [

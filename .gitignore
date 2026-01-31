@@ -57,3 +57,5 @@ app_output.log
 .vscode/
 *.swp
 *.bak
+src/TenantDoc.Api/wwwroot
+test-files/

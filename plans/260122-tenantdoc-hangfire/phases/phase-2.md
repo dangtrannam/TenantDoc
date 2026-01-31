@@ -3,7 +3,8 @@ phase: 2
 title: "Document Storage & Tesseract OCR Setup"
 day: 2
 duration: 6h
-status: pending
+status: DONE
+completed: 2026-01-31
 dependencies: [1]
 ---
 
