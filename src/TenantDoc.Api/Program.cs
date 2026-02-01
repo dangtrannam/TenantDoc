@@ -76,4 +76,13 @@ RecurringJob.AddOrUpdate<UsageReportJob>(
         TimeZone = TimeZoneInfo.Utc
     });
 
+RecurringJob.AddOrUpdate<BatchCleanupJob>(
+    "batch-cleanup",
+    x => x.CleanupOldBatches(),
+    "0 3 * * *", // Daily at 3 AM UTC (after document cleanup)
+    new RecurringJobOptions
+    {
+        TimeZone = TimeZoneInfo.Utc
+    });
+
 app.Run();

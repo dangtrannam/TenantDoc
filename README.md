@@ -38,10 +38,10 @@ Upload → ValidationJob (Fire-Forget) → OcrJob (Delayed) → ThumbnailJob (Co
 The project is structured into 7 implementation phases:
 
 - [x] **Phase 1: Foundation & Project Setup** - Basic solution structure, Hangfire integration, and first job.
-- [ ] **Phase 2: Document Storage & Tesseract OCR** - Real file handling and OCR integration.
-- [ ] **Phase 3: Delayed Jobs & Continuations** - Pipeline orchestration.
-- [ ] **Phase 4: Queue System & Recurring Jobs** - Multi-tenant queue prioritization (VIP vs Standard).
-- [ ] **Phase 5: Batch Processing** - Handling bulk uploads.
+- [x] **Phase 2: Document Storage & Tesseract OCR** - Real file handling and OCR integration.
+- [x] **Phase 3: Delayed Jobs & Continuations** - Pipeline orchestration.
+- [x] **Phase 4: Queue System & Recurring Jobs** - Multi-tenant queue prioritization (VIP vs Standard).
+- [x] **Phase 5: Batch Processing** - Handling bulk uploads with custom batch tracking.
 - [ ] **Phase 6: Advanced Error Handling & Filters** - Retries, circuit breakers, and custom filters.
 - [ ] **Phase 7: Production Readiness** - Graceful shutdown, performance testing, and persistence.
 

@@ -81,6 +81,140 @@ public class DocumentsController(
     }
 
     /// <summary>
+    /// Upload multiple documents in a batch for processing
+    /// </summary>
+    /// <param name="tenantId">Tenant identifier</param>
+    /// <param name="files">Collection of document files (PDF, PNG, or JPG)</param>
+    /// <returns>Batch upload result with batch ID and document IDs</returns>
+    [HttpPost("bulk-upload")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> BulkUpload([FromQuery] string tenantId, IFormFileCollection files)
+    {
+        // Validate tenant exists
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            return BadRequest(new { error = "Tenant ID is required" });
+        }
+
+        var tenant = TenantStore.GetTenant(tenantId);
+        if (tenant == null)
+        {
+            return BadRequest(new { error = $"Tenant '{tenantId}' not found. Valid tenants: tenant-standard-1, tenant-standard-2, tenant-vip-1" });
+        }
+
+        if (files == null || files.Count == 0)
+        {
+            return BadRequest(new { error = "No files provided" });
+        }
+
+        // Limit batch size to prevent memory issues
+        if (files.Count > 100)
+        {
+            return BadRequest(new { error = "Batch size too large. Maximum: 100 documents" });
+        }
+
+        var allowedTypes = new[] { "application/pdf", "image/png", "image/jpeg", "image/jpg" };
+        const long maxFileSize = 10 * 1024 * 1024;
+
+        // FAIL-FAST VALIDATION: Validate all files before processing
+        foreach (var file in files)
+        {
+            if (!allowedTypes.Contains(file.ContentType.ToLower()))
+            {
+                return BadRequest(new { error = $"Invalid file type for '{file.FileName}'. Allowed: PDF, PNG, JPG" });
+            }
+
+            if (file.Length > maxFileSize)
+            {
+                return BadRequest(new { error = $"File '{file.FileName}' too large. Maximum size: 10MB" });
+            }
+
+            if (file.Length == 0)
+            {
+                return BadRequest(new { error = $"File '{file.FileName}' is empty" });
+            }
+        }
+
+        // Create batch metadata
+        var batch = new Batch
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            DocumentIds = new List<Guid>(),
+            Status = BatchStatus.Processing,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        // Save all files and create document records
+        // Track successfully created documents for cleanup on failure
+        var createdDocuments = new List<Document>();
+
+        try
+        {
+            foreach (var file in files)
+            {
+                var document = new Document
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    FileName = file.FileName,
+                    FileSize = file.Length,
+                    Status = DocumentStatus.Uploaded,
+                    UploadedAt = DateTime.UtcNow
+                };
+
+                // Save file to storage
+                using var stream = file.OpenReadStream();
+                var filePath = await _storage.SaveAsync(stream, tenantId, document.Id.ToString(), file.FileName);
+                document.FilePath = filePath;
+
+                // Store metadata
+                _store.Add(document);
+                batch.DocumentIds.Add(document.Id);
+                createdDocuments.Add(document);
+            }
+
+            // Store batch metadata
+            BatchStore.Add(batch);
+
+            Console.WriteLine($"[BulkUpload] Created batch {batch.Id} with {batch.DocumentIds.Count} documents for tenant {tenantId}");
+
+            // Enqueue batch processing job
+            var jobId = _jobClient.Enqueue<BatchProcessingJob>(x => x.ProcessBatch(batch.Id));
+            Console.WriteLine($"[BulkUpload] Enqueued BatchProcessingJob {jobId} for batch {batch.Id}");
+
+            return Ok(new
+            {
+                batchId = batch.Id,
+                documentIds = batch.DocumentIds,
+                totalDocuments = batch.DocumentIds.Count,
+                batchJobId = jobId,
+                status = batch.Status.ToString()
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[BulkUpload] ERROR during batch upload: {ex.Message}");
+
+            // Clean up: Remove created documents from store
+            foreach (var doc in createdDocuments)
+            {
+                _store.Delete(doc.Id);
+                Console.WriteLine($"[BulkUpload] Cleaned up document {doc.Id} after failure");
+            }
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                error = "Batch upload failed",
+                message = ex.Message,
+                filesProcessed = createdDocuments.Count,
+                totalFiles = files.Count
+            });
+        }
+    }
+
+    /// <summary>
     /// Get document by ID
     /// </summary>
     /// <param name="id">Document ID</param>
