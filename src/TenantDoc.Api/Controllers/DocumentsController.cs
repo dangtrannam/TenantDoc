@@ -1,6 +1,8 @@
 using Hangfire;
+using Hangfire.States;
 using Microsoft.AspNetCore.Mvc;
 using TenantDoc.Api.Jobs;
+using TenantDoc.Api.Stores;
 using TenantDoc.Core.Interfaces;
 using TenantDoc.Core.Models;
 
@@ -8,21 +10,14 @@ namespace TenantDoc.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class DocumentsController : ControllerBase
+public class DocumentsController(
+    IBackgroundJobClient jobClient,
+    IDocumentStore store,
+    IFileStorageService storage) : ControllerBase
 {
-    private readonly IBackgroundJobClient _jobClient;
-    private readonly IDocumentStore _store;
-    private readonly IFileStorageService _storage;
-
-    public DocumentsController(
-        IBackgroundJobClient jobClient,
-        IDocumentStore store,
-        IFileStorageService storage)
-    {
-        _jobClient = jobClient;
-        _store = store;
-        _storage = storage;
-    }
+    private readonly IBackgroundJobClient _jobClient = jobClient;
+    private readonly IDocumentStore _store = store;
+    private readonly IFileStorageService _storage = storage;
 
     /// <summary>
     /// Upload a document file for processing
@@ -101,5 +96,72 @@ public class DocumentsController : ControllerBase
             return NotFound();
         }
         return Ok(document);
+    }
+
+    /// <summary>
+    /// Test endpoint to enqueue multiple jobs for queue priority testing
+    /// </summary>
+    /// <returns>Test job IDs</returns>
+    [HttpPost("test-queue-priority")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult TestQueuePriority()
+    {
+        var result = new
+        {
+            criticalJobs = new List<string>(),
+            defaultJobs = new List<string>(),
+            batchJobs = new List<string>()
+        };
+
+        Console.WriteLine("[TestQueuePriority] Enqueueing 20 test jobs (10 critical, 5 default, 5 batch)");
+
+        // Enqueue 10 jobs to critical queue (VIP tenant)
+        for (int i = 0; i < 10; i++)
+        {
+            var jobId = _jobClient.Create(() => TestJob($"Critical-{i + 1}"), new EnqueuedState("critical"));
+            result.criticalJobs.Add(jobId);
+        }
+
+        // Enqueue 5 jobs to default queue
+        for (int i = 0; i < 5; i++)
+        {
+            var jobId = _jobClient.Create(() => TestJob($"Default-{i + 1}"), new EnqueuedState("default"));
+            result.defaultJobs.Add(jobId);
+        }
+
+        // Enqueue 5 jobs to batch queue
+        for (int i = 0; i < 5; i++)
+        {
+            var jobId = _jobClient.Create(() => TestJob($"Batch-{i + 1}"), new EnqueuedState("batch"));
+            result.batchJobs.Add(jobId);
+        }
+
+        Console.WriteLine($"[TestQueuePriority] Enqueued {result.criticalJobs.Count} critical, {result.defaultJobs.Count} default, {result.batchJobs.Count} batch jobs");
+
+        return Ok(new
+        {
+            message = "Test jobs enqueued successfully",
+            totalJobs = 20,
+            criticalQueueJobs = result.criticalJobs.Count,
+            defaultQueueJobs = result.defaultJobs.Count,
+            batchQueueJobs = result.batchJobs.Count,
+            jobIds = result
+        });
+    }
+
+    /// <summary>
+    /// Test job method for queue priority testing
+    /// </summary>
+    public static async Task TestJob(string jobName)
+    {
+        var startTime = DateTime.UtcNow;
+        Console.WriteLine($"[TestJob] {jobName} started at {startTime:HH:mm:ss.fff}");
+
+        // Simulate work with 2-5 second delay
+        var delay = Random.Shared.Next(2000, 5000);
+        await Task.Delay(delay);
+
+        var duration = (DateTime.UtcNow - startTime).TotalSeconds;
+        Console.WriteLine($"[TestJob] {jobName} completed in {duration:F2}s");
     }
 }

@@ -20,4 +20,9 @@ public class InMemoryDocumentStore : IDocumentStore
     }
 
     public IEnumerable<Document> GetAll() => _documents.Values;
+
+    public void Delete(Guid id)
+    {
+        _documents.TryRemove(id, out _);
+    }
 }

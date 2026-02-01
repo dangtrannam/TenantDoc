@@ -28,7 +28,14 @@ builder.Services.AddHangfire(config => config
     .UseRecommendedSerializerSettings()
     .UseInMemoryStorage());
 
-builder.Services.AddHangfireServer();
+// Configure Hangfire server with multi-tier queue system
+// Workers are distributed across queues proportionally based on order
+// Approximate allocation: critical=4, default=2, batch=1
+builder.Services.AddHangfireServer(options =>
+{
+    options.Queues = ["critical", "default", "batch"];
+    options.WorkerCount = 7; // Total workers across all queues
+});
 
 var app = builder.Build();
 
@@ -48,5 +55,25 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
 {
     Authorization = new[] { new LocalhostAuthorizationFilter() }
 });
+
+// Register recurring jobs
+// Note: Queue assignment is handled via [Queue("batch")] attribute on job classes
+RecurringJob.AddOrUpdate<CleanupJob>(
+    "daily-cleanup",
+    x => x.CleanupOldDocuments(),
+    "0 2 * * *", // Daily at 2 AM UTC
+    new RecurringJobOptions
+    {
+        TimeZone = TimeZoneInfo.Utc
+    });
+
+RecurringJob.AddOrUpdate<UsageReportJob>(
+    "hourly-usage-report",
+    x => x.GenerateHourlyReport(),
+    "0 * * * *", // Every hour at minute 0
+    new RecurringJobOptions
+    {
+        TimeZone = TimeZoneInfo.Utc
+    });
 
 app.Run();

@@ -3,6 +3,9 @@ using TenantDoc.Core.Models;
 
 namespace TenantDoc.Api.Jobs;
 
+using Hangfire;
+
+[Queue("default")]
 public class ThumbnailJob(IThumbnailService thumbnailService, IDocumentStore store, IFileStorageService storage)
 {
     private readonly IThumbnailService _thumbnailService = thumbnailService;

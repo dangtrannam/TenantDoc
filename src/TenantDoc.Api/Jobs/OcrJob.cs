@@ -3,6 +3,10 @@ using TenantDoc.Core.Models;
 
 namespace TenantDoc.Api.Jobs;
 
+using Hangfire;
+
+// Note: Queue is dynamically assigned based on tenant tier in ValidationJob
+// VIP tenants → critical queue, Standard tenants → default queue
 public class OcrJob(IOcrService ocrService, IDocumentStore store, IFileStorageService storage)
 {
     private readonly IOcrService _ocrService = ocrService;

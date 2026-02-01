@@ -1,9 +1,12 @@
 using Hangfire;
+using Hangfire.States;
+using TenantDoc.Api.Stores;
 using TenantDoc.Core.Interfaces;
 using TenantDoc.Core.Models;
 
 namespace TenantDoc.Api.Jobs;
 
+[Queue("default")]
 public class ValidationJob(IDocumentStore store, IFileStorageService storage, IBackgroundJobClient jobClient)
 {
     private readonly IDocumentStore _store = store;
@@ -58,11 +61,28 @@ public class ValidationJob(IDocumentStore store, IFileStorageService storage, IB
                 var duration = (DateTime.UtcNow - startTime).TotalSeconds;
                 Console.WriteLine($"[ValidationJob] Document {documentId} validated successfully in {duration:F2}s");
 
-                // Schedule OCR job with 30-second delay and get job ID
-                var ocrJobId = _jobClient.Schedule<OcrJob>(
+                // Determine queue based on tenant tier (VIP → critical, Standard → default)
+                var queueName = TenantStore.GetQueueForTenant(document.TenantId);
+                var tenant = TenantStore.GetTenant(document.TenantId);
+                var tierLabel = tenant?.Tier.ToString() ?? "Unknown";
+
+                if (tenant == null)
+                {
+                    Console.WriteLine($"[ValidationJob] WARNING: Tenant {document.TenantId} not found in TenantStore. Defaulting to 'default' queue.");
+                }
+
+                Console.WriteLine($"[ValidationJob] Tenant: {document.TenantId} (Tier: {tierLabel}) → Queue: {queueName}");
+
+                // Schedule OCR job with 30-second delay in tenant-specific queue
+                // Create the job in Scheduled state with the specified queue
+                var ocrJobId = _jobClient.Create<OcrJob>(
                     x => x.ProcessOcr(documentId),
-                    TimeSpan.FromSeconds(30));
-                Console.WriteLine($"[ValidationJob] Scheduled OcrJob for {documentId} with 30s delay (JobId: {ocrJobId})");
+                    new EnqueuedState(queueName));
+
+                // Change the job state to scheduled with 30 second delay
+                _jobClient.ChangeState(ocrJobId, new ScheduledState(TimeSpan.FromSeconds(30)));
+
+                Console.WriteLine($"[ValidationJob] Scheduled OcrJob for {documentId} with 30s delay in '{queueName}' queue (JobId: {ocrJobId})");
 
                 // Schedule ThumbnailJob as continuation (runs only if OcrJob succeeds)
                 _jobClient.ContinueJobWith<ThumbnailJob>(

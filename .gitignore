@@ -59,3 +59,4 @@ app_output.log
 *.bak
 src/TenantDoc.Api/wwwroot
 test-files/
+nul
